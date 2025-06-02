@@ -1,0 +1,32 @@
+# configs/config.yaml
+app:
+  port: "8080"
+  mode: "debug"
+
+database:
+  username: "gin_wire_demo"    
+  password: "123456"
+  host: "127.0.0.1"
+  port: 3306
+  dbname: "gin_wire_demo"
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime: 60
+
+redis:
+  addr: "localhost:6379"
+  password: "123456"
+  db: 0
+  pool_size: 30
+  dial_timeout: 10
+  read_timeout: 30
+  write_timeout: 30
+  pool_timeout: 30
+
+log:
+  level: "info"  # 可以是 debug, info, warn, error, fatal
+
+jwt:
+  signing_key: "your_secret_key"  # 建议使用长随机字符串
+  timeout: 24h  # Token 有效期
+  max_refresh: 24h  # Token 最大刷新时间
