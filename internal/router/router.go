@@ -25,6 +25,7 @@ func NewRouter(
 	authMiddleware *middleware.AuthMiddleware,
 	authController *controller.AuthController,
 	jwtMiddleware *middleware.JWT,
+	rateLimiter *middleware.RateLimiterMiddleware,
 	cfg *config.Config,
 	logger logger.Logger,
 ) *Router {
@@ -53,6 +54,7 @@ func NewRouter(
 	}
 	// 公共路由
 	public := r.Group("/api")
+	public.Use(rateLimiter.Handle(2, 5*time.Second))
 	{
 		//公共路由
 		public.GET("/health", func(c *gin.Context) {
@@ -67,6 +69,7 @@ func NewRouter(
 	auth := r.Group("/api")
 	auth.Use(jwtMiddleware.MiddlewareFunc())
 	{
+		auth.POST("/logout", jwtMiddleware.LogoutHandler)
 		auth.GET("/userinfo", authController.UserInfo)
 		auth.GET("/users/:username", userController.GetUser)
 	}

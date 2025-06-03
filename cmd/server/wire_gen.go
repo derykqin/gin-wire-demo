@@ -45,14 +45,15 @@ func InitializeApp(configPath string) (*router.Router, func(), error) {
 		return nil, nil, err
 	}
 	authMiddleware := middleware.NewAuthMiddleware(client)
-	jwt, err := middleware.NewJWT(userServiceImpl, zapLogger, configConfig)
+	jwt, err := middleware.NewJWT(userServiceImpl, zapLogger, configConfig, client)
 	if err != nil {
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
 	authController := controller.NewAuthController(jwt, zapLogger)
-	routerRouter := router.NewRouter(userController, authMiddleware, authController, jwt, configConfig, zapLogger)
+	rateLimiterMiddleware := middleware.NewRateLimiterMiddleware(client, configConfig, zapLogger)
+	routerRouter := router.NewRouter(userController, authMiddleware, authController, jwt, rateLimiterMiddleware, configConfig, zapLogger)
 	return routerRouter, func() {
 		cleanup2()
 		cleanup()
@@ -73,7 +74,7 @@ var serviceSet = wire.NewSet(service.NewUserService, wire.Bind(new(service.UserS
 
 var controllerSet = wire.NewSet(controller.NewUserController, controller.NewAuthController)
 
-var middlewareSet = wire.NewSet(middleware.NewAuthMiddleware)
+var middlewareSet = wire.NewSet(middleware.NewAuthMiddleware, middleware.NewRateLimiterMiddleware)
 
 var routerSet = wire.NewSet(router.NewRouter)
 

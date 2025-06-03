@@ -18,6 +18,7 @@ type Config struct {
 }
 
 type AppConfig struct {
+	Name string `mapstructure:"name"`
 	Port string `mapstructure:"port"`
 	Mode string `mapstructure:"mode"`
 }
@@ -49,9 +50,10 @@ type LogConfig struct {
 }
 
 type JWTConfig struct {
-	SigningKey string        `mapstructure:"signing_key"` // JWT 签名密钥
-	Timeout    time.Duration `mapstructure:"timeout"`     // Token 过期时间
-	MaxRefresh time.Duration `mapstructure:"max_refresh"` // 最大刷新时间
+	SigningKey    string        `mapstructure:"signing_key"`    // JWT 签名密钥
+	Timeout       time.Duration `mapstructure:"timeout"`        // Token 过期时间
+	MaxRefresh    time.Duration `mapstructure:"max_refresh"`    // 最大刷新时间
+	CacheDuration time.Duration `mapstructure:"cache_duration"` // 用户信息缓存时间
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -106,9 +108,19 @@ func setDefaults() {
 	viper.SetDefault("redis.read_timeout", 30)
 	viper.SetDefault("redis.write_timeout", 30)
 	viper.SetDefault("redis.pool_timeout", 30)
+
+	//jwt defaults
+	viper.SetDefault("jwt.timeout", time.Hour*8)           // 默认24小时
+	viper.SetDefault("jwt.max_refresh", time.Hour*24)      // 默认7天
+	viper.SetDefault("jwt.cache_duration", time.Second*60) //
+
 }
 
 func validateConfig(cfg *Config) error {
+	if cfg.App.Name == "" {
+		return fmt.Errorf("app name cannot be empty")
+	}
+
 	if cfg.App.Port == "" {
 		return fmt.Errorf("app port cannot be empty")
 	}
@@ -128,6 +140,20 @@ func validateConfig(cfg *Config) error {
 
 	if cfg.Redis.Addr == "" {
 		return fmt.Errorf("redis address cannot be empty")
+	}
+
+	// 验证 JWT 配置
+	if cfg.JWT.SigningKey == "" {
+		return fmt.Errorf("jwt signing key cannot be empty")
+	}
+	if len(cfg.JWT.SigningKey) < 32 {
+		return fmt.Errorf("jwt signing key must be at least 32 characters")
+	}
+	if cfg.JWT.Timeout <= 0 {
+		return fmt.Errorf("jwt timeout must be positive")
+	}
+	if cfg.JWT.MaxRefresh <= 0 {
+		return fmt.Errorf("jwt max refresh must be positive")
 	}
 
 	return nil

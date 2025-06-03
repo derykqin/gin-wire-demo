@@ -8,6 +8,7 @@ type User struct {
 	Username string `gorm:"size:255;not null;unique" json:"username"`
 	Password string `gorm:"size:255;not null" json:"-"`
 	Email    string `gorm:"size:255;unique" json:"email"`
+	Status   string `gorm:"size:255;unique" json:"status"`
 }
 
 // GetUserID 实现 jwt.Identity 接口

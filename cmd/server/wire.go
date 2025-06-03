@@ -48,6 +48,7 @@ var controllerSet = wire.NewSet(
 
 var middlewareSet = wire.NewSet(
 	middleware.NewAuthMiddleware,
+	middleware.NewRateLimiterMiddleware,
 )
 
 var routerSet = wire.NewSet(

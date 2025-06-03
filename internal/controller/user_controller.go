@@ -28,7 +28,6 @@ func NewUserController(
 }
 
 func (c *UserController) Register(ctx *gin.Context) {
-	c.logger.Info("register request received")
 	var user model.User
 	if err := ctx.ShouldBindJSON(&user); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

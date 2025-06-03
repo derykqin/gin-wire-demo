@@ -1,5 +1,6 @@
 # configs/config.yaml
 app:
+  name: "gin_wire_demo"  #必填
   port: "8080"
   mode: "debug"
 
@@ -30,3 +31,4 @@ jwt:
   signing_key: "your_secret_key"  # 建议使用长随机字符串
   timeout: 24h  # Token 有效期
   max_refresh: 24h  # Token 最大刷新时间
+  cache_duration: 60s
