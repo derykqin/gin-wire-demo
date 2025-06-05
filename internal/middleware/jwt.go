@@ -192,9 +192,6 @@ func NewJWT(
 					"iat": now.Unix(),                         // 签发时间
 					"jti": uuid.NewString(),                   // 唯一标识符（防重放）
 
-					// 安全增强claims
-					// "ip": c.ClientIP(), // 签发IP
-
 				}
 			}
 			return jwt.MapClaims{}
