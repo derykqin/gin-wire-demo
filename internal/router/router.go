@@ -69,7 +69,7 @@ func NewRouter(
 	auth := r.Group("/api")
 	auth.Use(jwtMiddleware.MiddlewareFunc())
 	{
-		auth.POST("/logout", jwtMiddleware.LogoutHandler)
+		auth.POST("/logout", authController.LogoutHandler)
 		auth.GET("/userinfo", authController.UserInfo)
 		auth.GET("/users/:username", userController.GetUser)
 	}

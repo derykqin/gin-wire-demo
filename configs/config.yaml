@@ -2,7 +2,7 @@
 app:
   name: "gin_wire_demo"  #必填
   port: "8080"
-  mode: "debug"
+  mode: "debug"   #release,debug,test
 
 database:
   username: "gin_wire_demo"    
@@ -28,7 +28,7 @@ log:
   level: "info"  # 可以是 debug, info, warn, error, fatal
 
 jwt:
-  signing_key: "your_secret_key"  # 建议使用长随机字符串
-  timeout: 24h  # Token 有效期
+  signing_key: "k5Xj9Lm2P8vQw3Zy7Nf4Rc6Bh1GtD0sA"  # 建议使用长随机字符串
+  timeout: 8h  # Token 有效期
   max_refresh: 24h  # Token 最大刷新时间
-  cache_duration: 60s
+  cache_duration: 60s    #jwt中间件校验用户信息时缓存用户信息，不从数据库取，提高性能

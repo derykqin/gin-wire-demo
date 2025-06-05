@@ -66,9 +66,6 @@ func NewJWT(
 				return nil, jwt.ErrMissingLoginValues
 			}
 
-			// 增加登录审计日志
-			logger.Info(fmt.Sprintf("Login attempt: %s", login.Username))
-
 			user, err := userService.GetUserByUsername(login.Username)
 			if err != nil {
 				logger.Warn(fmt.Sprintf("User not found: %s", login.Username))
@@ -310,7 +307,7 @@ func getUserWithCache(client *redis.Client, userService service.UserService, key
 		}
 		return nil, false, err
 	}
-
+	user.Password = ""
 	// 3. 设置缓存
 	setCacheUserinfo(client, key, user, ttl)
 	return user, false, nil

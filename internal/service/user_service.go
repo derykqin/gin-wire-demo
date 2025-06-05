@@ -2,8 +2,11 @@
 package service
 
 import (
+	"errors"
 	"gin-wire-demo/internal/model"
 	"gin-wire-demo/internal/repository"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserService interface {
@@ -21,6 +24,12 @@ func NewUserService(userRepo repository.UserRepository) *UserServiceImpl {
 }
 
 func (s *UserServiceImpl) CreateUser(user *model.User) error {
+	hashed, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return errors.New("密码hash失败")
+	}
+	user.Password = string(hashed)
+	user.Status = "active"
 	return s.userRepo.Create(user)
 }
 

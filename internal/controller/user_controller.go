@@ -2,6 +2,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 
 	"gin-wire-demo/internal/model"
@@ -10,6 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
+)
+
+var (
+	ErrRegisterFail   = errors.New("用户注册失败")
+	ErrValidationfail = errors.New("参数校验失败")
 )
 
 type UserController struct {
@@ -30,12 +36,11 @@ func NewUserController(
 func (c *UserController) Register(ctx *gin.Context) {
 	var user model.User
 	if err := ctx.ShouldBindJSON(&user); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": ErrValidationfail.Error()})
 		return
 	}
-
 	if err := c.userService.CreateUser(&user); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": ErrRegisterFail.Error()})
 		return
 	}
 
@@ -50,6 +55,6 @@ func (c *UserController) GetUser(ctx *gin.Context) {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
-
+	user.Password = ""
 	ctx.JSON(http.StatusOK, user)
 }

@@ -32,6 +32,11 @@ func (c *AuthController) LoginHandler(ctx *gin.Context) {
 	c.jwtMiddleware.LoginHandler(ctx)
 }
 
+// LogoutHandler 退出登录接口
+func (c *AuthController) LogoutHandler(ctx *gin.Context) {
+	c.jwtMiddleware.LogoutHandler(ctx)
+}
+
 // RefreshHandler 刷新 Token 接口
 func (c *AuthController) RefreshHandler(ctx *gin.Context) {
 	c.jwtMiddleware.RefreshHandler(ctx)
