@@ -17,6 +17,7 @@ import (
 	jwt "github.com/appleboy/gin-jwt/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -120,10 +121,11 @@ func NewJWT(
 				return false
 			}
 
-			// 新增：检查令牌是否在黑名单中
-			token := jwt.GetToken(c)
-			if isTokenBlacklisted(redisClient, blacklistKey, token) {
-				logger.Warn(fmt.Sprintf("Token revoked: %s", token))
+			// 新增：检查jti是否在黑名单中
+			if isTokenBlacklisted(redisClient, blacklistKey, c) {
+				claims := jwt.ExtractClaims(c)
+				jti, _ := claims["jti"].(string)
+				logger.Warn(fmt.Sprintf("Token revoked (jti: %s)", jti))
 				return false
 			}
 
@@ -179,8 +181,20 @@ func NewJWT(
 		// 在 JWT 中存储额外信息
 		PayloadFunc: func(data interface{}) jwt.MapClaims {
 			if user, ok := data.(*model.User); ok {
+				now := time.Now()
 				return jwt.MapClaims{
 					identityKey: user.ID,
+					// 标准claims
+					"iss": config.App.Name,                    // 签发者
+					"sub": "authentication",                   // 主题
+					"exp": now.Add(config.JWT.Timeout).Unix(), // 过期时间
+					"nbf": now.Unix(),                         // 生效时间（立即生效）
+					"iat": now.Unix(),                         // 签发时间
+					"jti": uuid.NewString(),                   // 唯一标识符（防重放）
+
+					// 安全增强claims
+					// "ip": c.ClientIP(), // 签发IP
+
 				}
 			}
 			return jwt.MapClaims{}
@@ -222,15 +236,19 @@ func (j *JWT) RefreshHandler(c *gin.Context) {
 	// 调用原始刷新处理
 	j.AuthMiddleware.RefreshHandler(c)
 
-	// 如果刷新成功（状态码200），将旧令牌加入黑名单
+	// 如果刷新成功（状态码200），将旧令牌加入黑名单（使用jti）
 	if c.Writer.Status() == http.StatusOK && oldToken != "" {
 		claims, err := j.AuthMiddleware.GetClaimsFromJWT(c)
 		if err == nil {
 			if exp, ok := claims["exp"].(float64); ok {
+				jti, ok := claims["jti"].(string)
+				if !ok {
+					return
+				}
 				expireTime := time.Unix(int64(exp), 0)
 				remaining := time.Until(expireTime)
 				if remaining > 0 {
-					key := j.blacklistKey + oldToken
+					key := j.blacklistKey + jti
 					j.redisClient.Set(
 						context.Background(),
 						key,
@@ -267,16 +285,21 @@ func (j *JWT) LogoutHandler(c *gin.Context) {
 	expireTime := time.Unix(int64(exp), 0)
 	remaining := time.Until(expireTime)
 
-	// 如果令牌还有效，加入黑名单
+	// 如果令牌还有效，加入黑名单（使用jti）
 	if remaining > 0 {
-		key := j.blacklistKey + token
+		jti, ok := claims["jti"].(string)
+		if !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid token claims"})
+			return
+		}
+		key := j.blacklistKey + jti
 		if err := j.redisClient.Set(
 			context.Background(),
 			key,
 			1,         // 值可以是任意内容
 			remaining, // 设置与令牌相同的TTL
 		).Err(); err != nil {
-			j.logger.Error(fmt.Sprintf("Failed to add token to blacklist:%b", err))
+			j.logger.Error(fmt.Sprintf("Failed to add jti to blacklist:%b", err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return
 		}
@@ -346,16 +369,17 @@ func clearCacheUserinfo(client *redis.Client, key string) {
 	client.Del(context.Background(), key)
 }
 
-// 检查令牌是否在黑名单中
-func isTokenBlacklisted(rdb *redis.Client, prefix, token string) bool {
-	if token == "" {
+// 检查jti是否在黑名单中
+func isTokenBlacklisted(rdb *redis.Client, prefix string, c *gin.Context) bool {
+	claims := jwt.ExtractClaims(c)
+	jti, ok := claims["jti"].(string)
+	if !ok || jti == "" {
 		return false
 	}
 
-	key := prefix + token
+	key := prefix + jti
 	exists, err := rdb.Exists(context.Background(), key).Result()
 	if err != nil {
-		// 错误处理，记录日志但允许访问
 		return false
 	}
 	return exists > 0
