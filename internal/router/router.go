@@ -62,7 +62,7 @@ func NewRouter(
 		})
 		public.POST("/register", userController.Register)
 		public.POST("/login", authController.LoginHandler)
-		public.POST("/refresh", authController.RefreshHandler)
+		// public.POST("/refresh", authController.RefreshHandler)
 
 	}
 	// 需要 JWT 认证的路由
