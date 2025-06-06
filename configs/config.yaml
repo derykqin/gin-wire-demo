@@ -32,3 +32,6 @@ jwt:
   timeout: 8h  # Token 有效期
   max_refresh: 24h  # Token 最大刷新时间
   cache_duration: 60s    #jwt中间件校验用户信息时缓存用户信息，不从数据库取，提高性能
+
+  max_login_attempts: 3    # 最大尝试次数（连续错误3次）
+  lock_duration: 5m        # 锁定持续时间（5分钟）

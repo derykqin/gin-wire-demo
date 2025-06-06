@@ -14,6 +14,7 @@ import (
 	"gin-wire-demo/internal/router"
 	"gin-wire-demo/internal/service"
 	"gin-wire-demo/pkg/db"
+	"gin-wire-demo/pkg/jwtauth"
 	"gin-wire-demo/pkg/logger"
 	"gin-wire-demo/pkg/redis"
 	"github.com/google/wire"
@@ -45,7 +46,10 @@ func InitializeApp(configPath string) (*router.Router, func(), error) {
 		return nil, nil, err
 	}
 	authMiddleware := middleware.NewAuthMiddleware(client)
-	jwt, err := middleware.NewJWT(userServiceImpl, zapLogger, configConfig, client)
+	jwtBlacklist := jwtauth.NewJwtBlacklist(client, configConfig, zapLogger)
+	loginLocked := jwtauth.NewLoginLocked(client, configConfig)
+	jwtCacheUserinfo := jwtauth.NewJwtCacheUserinfo(client, configConfig, userServiceImpl)
+	jwt, err := middleware.NewJWT(userServiceImpl, zapLogger, configConfig, client, jwtBlacklist, loginLocked, jwtCacheUserinfo)
 	if err != nil {
 		cleanup2()
 		cleanup()
@@ -80,4 +84,4 @@ var routerSet = wire.NewSet(router.NewRouter)
 
 var loggerSet = wire.NewSet(logger.NewZapLogger, wire.Bind(new(logger.Logger), new(*logger.ZapLogger)))
 
-var jwtSet = wire.NewSet(middleware.NewJWT)
+var jwtSet = wire.NewSet(middleware.NewJWT, jwtauth.NewJwtBlacklist, jwtauth.NewLoginLocked, jwtauth.NewJwtCacheUserinfo)

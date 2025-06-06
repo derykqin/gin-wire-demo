@@ -2,8 +2,6 @@
 package middleware
 
 import (
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +10,7 @@ import (
 	"gin-wire-demo/internal/config"
 	"gin-wire-demo/internal/model"
 	"gin-wire-demo/internal/service"
+	"gin-wire-demo/pkg/jwtauth"
 	"gin-wire-demo/pkg/logger"
 
 	jwt "github.com/appleboy/gin-jwt/v2"
@@ -19,7 +18,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
-	"gorm.io/gorm"
 )
 
 const (
@@ -29,14 +27,17 @@ const (
 var (
 	ErrInvalidCredentials = errors.New("invalid username or password")
 	ErrUserDisabled       = errors.New("user account is disabled")
+	ErrAccountLocked      = errors.New("account locked due to too many failed attempts")
 )
 
 type JWT struct {
-	AuthMiddleware *jwt.GinJWTMiddleware
-	logger         logger.Logger
-	redisClient    *redis.Client
-	config         *config.Config
-	blacklistKey   string // 黑名单键前缀
+	AuthMiddleware   *jwt.GinJWTMiddleware
+	Logger           logger.Logger
+	RedisClient      *redis.Client
+	Config           *config.Config
+	JwtBlacklist     *jwtauth.JwtBlacklist
+	JwtLoginLocked   *jwtauth.LoginLocked
+	JwtCacheUserinfo *jwtauth.JwtCacheUserinfo
 }
 
 func NewJWT(
@@ -44,9 +45,10 @@ func NewJWT(
 	logger logger.Logger,
 	config *config.Config,
 	redisClient *redis.Client,
+	blacklist *jwtauth.JwtBlacklist,
+	loginLock *jwtauth.LoginLocked,
+	cacheUserinfo *jwtauth.JwtCacheUserinfo,
 ) (*JWT, error) {
-	prefix_key := "cache:" + config.App.Name + ":jwt:mid:ui:"
-	blacklistKey := "cache:" + config.App.Name + ":jwt:bl:"
 
 	// 创建 JWT 中间件
 	authMiddleware, err := jwt.New(&jwt.GinJWTMiddleware{
@@ -66,7 +68,12 @@ func NewJWT(
 			if err := c.ShouldBindJSON(&login); err != nil {
 				return nil, jwt.ErrMissingLoginValues
 			}
-
+			// 1. 检查账户是否被锁定
+			if locked, err := loginLock.IsAccountLocked(login.Username); err != nil {
+				logger.Error(fmt.Sprintf("Account lock check error: %v", err))
+			} else if locked {
+				return nil, ErrAccountLocked
+			}
 			user, err := userService.GetUserByUsername(login.Username)
 			if err != nil {
 				logger.Warn(fmt.Sprintf("User not found: %s", login.Username))
@@ -84,12 +91,20 @@ func NewJWT(
 				[]byte(user.Password),
 				[]byte(login.Password),
 			); err != nil {
+				// 2. 密码错误时增加失败计数
+				if err := loginLock.IncrementLoginFailure(login.Username); err != nil {
+					logger.Error(fmt.Sprintf("Failed to increment login counter: %v", err))
+				}
 				logger.Warn(fmt.Sprintf("Invalid password for user: %s", login.Username))
 				return nil, ErrInvalidCredentials
 			}
+			// 3. 登录成功重置失败计数
+			if err := loginLock.ClearLoginFailures(login.Username); err != nil {
+				logger.Warn(fmt.Sprintf("Failed to clear login failures: %v", err))
+			}
 			// 登录成功后清除旧缓存
-			key := prefix_key + fmt.Sprintf("%d", user.ID)
-			clearCacheUserinfo(redisClient, key)
+			key := fmt.Sprintf(jwtauth.Cacheuserinfokey, config.App.Name, user.ID)
+			cacheUserinfo.ClearCacheUserinfo(key)
 			return user, nil
 		},
 
@@ -122,7 +137,7 @@ func NewJWT(
 			}
 
 			// 新增：检查jti是否在黑名单中
-			if isTokenBlacklisted(redisClient, blacklistKey, c) {
+			if blacklist.IsTokenBlacklisted(c) {
 				claims := jwt.ExtractClaims(c)
 				jti, _ := claims["jti"].(string)
 				logger.Warn(fmt.Sprintf("Token revoked (jti: %s)", jti))
@@ -130,9 +145,7 @@ func NewJWT(
 			}
 
 			// 从缓存或数据库获取用户
-			key := fmt.Sprintf("%s%d", prefix_key, userID)
-			ttl := config.JWT.CacheDuration
-			user, fromCache, err := getUserWithCache(redisClient, userService, key, userID, ttl)
+			user, fromCache, err := cacheUserinfo.GetUserWithCache(userID)
 			if err != nil {
 				logger.Error(fmt.Sprintf("User lookup error: %v", err))
 				return false
@@ -147,7 +160,8 @@ func NewJWT(
 			if user.Status != "active" {
 				// 如果是缓存数据且状态不合法，清除缓存
 				if fromCache {
-					clearCacheUserinfo(redisClient, key)
+					key := fmt.Sprintf(jwtauth.Cacheuserinfokey, config.App.Name, user.ID)
+					cacheUserinfo.ClearCacheUserinfo(key)
 				}
 
 				logger.Info(fmt.Sprintf("Inactive user access: %d", userID))
@@ -211,10 +225,11 @@ func NewJWT(
 
 	return &JWT{
 		AuthMiddleware: authMiddleware,
-		logger:         logger,
-		redisClient:    redisClient,
-		config:         config,
-		blacklistKey:   blacklistKey,
+		Logger:         logger,
+		RedisClient:    redisClient,
+		Config:         config,
+		JwtBlacklist:   blacklist,
+		JwtLoginLocked: loginLock,
 	}, nil
 }
 
@@ -235,26 +250,10 @@ func (j *JWT) RefreshHandler(c *gin.Context) {
 
 	// 如果刷新成功（状态码200），将旧令牌加入黑名单（使用jti）
 	if c.Writer.Status() == http.StatusOK && oldToken != "" {
-		claims, err := j.AuthMiddleware.GetClaimsFromJWT(c)
-		if err == nil {
-			if exp, ok := claims["exp"].(float64); ok {
-				jti, ok := claims["jti"].(string)
-				if !ok {
-					return
-				}
-				expireTime := time.Unix(int64(exp), 0)
-				remaining := time.Until(expireTime)
-				if remaining > 0 {
-					key := j.blacklistKey + jti
-					j.redisClient.Set(
-						context.Background(),
-						key,
-						1,
-						remaining,
-					)
-				}
-			}
+		if err := j.JwtBlacklist.AddTokenBlacklist(c); err != nil {
+			j.Logger.Error(fmt.Sprintf("refresh token handler fail:%v", err))
 		}
+
 	}
 }
 
@@ -266,118 +265,10 @@ func (j *JWT) LogoutHandler(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "missing token"})
 		return
 	}
-	// 计算令牌剩余有效期
-	claims, err := j.AuthMiddleware.GetClaimsFromJWT(c)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid token"})
+	if err := j.JwtBlacklist.AddTokenBlacklist(c); err != nil {
+		j.Logger.Error(fmt.Sprintf("refresh token handler fail:%v", err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	exp, ok := claims["exp"].(float64)
-	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid token claims"})
-		return
-	}
-
-	expireTime := time.Unix(int64(exp), 0)
-	remaining := time.Until(expireTime)
-
-	// 如果令牌还有效，加入黑名单（使用jti）
-	if remaining > 0 {
-		jti, ok := claims["jti"].(string)
-		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid token claims"})
-			return
-		}
-		key := j.blacklistKey + jti
-		if err := j.redisClient.Set(
-			context.Background(),
-			key,
-			1,         // 值可以是任意内容
-			remaining, // 设置与令牌相同的TTL
-		).Err(); err != nil {
-			j.logger.Error(fmt.Sprintf("Failed to add jti to blacklist:%b", err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
-			return
-		}
-	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "logout successful"})
-}
-
-// 获取用户信息（带缓存）
-func getUserWithCache(client *redis.Client, userService service.UserService, key string, userID uint, ttl time.Duration) (*model.User, bool, error) {
-	// 1. 尝试从缓存获取
-	if user := getCacheUserinfo(client, key); user != nil {
-		// 空对象表示用户不存在
-		if user.ID == 0 {
-			return nil, true, nil
-		}
-		return user, true, nil
-	}
-
-	// 2. 查询数据库
-	user, err := userService.GetUserByID(userID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 缓存空对象防止穿透
-			u := &model.User{}
-			u.ID = 0
-			setCacheUserinfo(client, key, u, ttl)
-		}
-		return nil, false, err
-	}
-	user.Password = ""
-	// 3. 设置缓存
-	setCacheUserinfo(client, key, user, ttl)
-	return user, false, nil
-}
-
-func getCacheUserinfo(client *redis.Client, key string) *model.User {
-	cached, err := client.Get(context.Background(), key).Result()
-	switch {
-	case err == redis.Nil:
-		return nil
-	case err != nil:
-		return nil
-	case cached == "":
-		clearCacheUserinfo(client, key)
-		return nil
-	}
-	var user model.User
-	if err := json.Unmarshal([]byte(cached), &user); err != nil {
-		clearCacheUserinfo(client, key)
-		return nil
-	}
-
-	return &user
-}
-
-func setCacheUserinfo(client *redis.Client, key string, u *model.User, ttl time.Duration) error {
-	marshaled, err := json.Marshal(u)
-	if err != nil {
-		return err
-	}
-	client.Set(context.Background(), key, string(marshaled), ttl)
-	return nil
-}
-
-func clearCacheUserinfo(client *redis.Client, key string) {
-	client.Del(context.Background(), key)
-}
-
-// 检查jti是否在黑名单中
-func isTokenBlacklisted(rdb *redis.Client, prefix string, c *gin.Context) bool {
-	claims := jwt.ExtractClaims(c)
-	jti, ok := claims["jti"].(string)
-	if !ok || jti == "" {
-		return false
-	}
-
-	key := prefix + jti
-	exists, err := rdb.Exists(context.Background(), key).Result()
-	if err != nil {
-		return false
-	}
-	return exists > 0
 }

@@ -50,10 +50,12 @@ type LogConfig struct {
 }
 
 type JWTConfig struct {
-	SigningKey    string        `mapstructure:"signing_key"`    // JWT 签名密钥
-	Timeout       time.Duration `mapstructure:"timeout"`        // Token 过期时间
-	MaxRefresh    time.Duration `mapstructure:"max_refresh"`    // 最大刷新时间
-	CacheDuration time.Duration `mapstructure:"cache_duration"` // 用户信息缓存时间
+	SigningKey       string        `mapstructure:"signing_key"`    // JWT 签名密钥
+	Timeout          time.Duration `mapstructure:"timeout"`        // Token 过期时间
+	MaxRefresh       time.Duration `mapstructure:"max_refresh"`    // 最大刷新时间
+	CacheDuration    time.Duration `mapstructure:"cache_duration"` // 用户信息缓存时间
+	MaxLoginAttempts int           `json:"max_login_attempts"`     // 新增
+	LockDuration     time.Duration `json:"lock_duration"`          // 新增
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -113,6 +115,8 @@ func setDefaults() {
 	viper.SetDefault("jwt.timeout", time.Hour*8)           // 默认24小时
 	viper.SetDefault("jwt.max_refresh", time.Hour*24)      // 默认7天
 	viper.SetDefault("jwt.cache_duration", time.Second*60) //
+	viper.SetDefault("jwt.max_login_attempts", 3)          //
+	viper.SetDefault("jwt.lock_duration", time.Minute*5)   //
 
 }
 

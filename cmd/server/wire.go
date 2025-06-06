@@ -12,6 +12,7 @@ import (
 	"gin-wire-demo/internal/router"
 	"gin-wire-demo/internal/service"
 	"gin-wire-demo/pkg/db"
+	"gin-wire-demo/pkg/jwtauth"
 	"gin-wire-demo/pkg/logger"
 	"gin-wire-demo/pkg/redis"
 
@@ -62,6 +63,9 @@ var loggerSet = wire.NewSet(
 
 var jwtSet = wire.NewSet(
 	middleware.NewJWT,
+	jwtauth.NewJwtBlacklist,
+	jwtauth.NewLoginLocked,
+	jwtauth.NewJwtCacheUserinfo,
 )
 
 // InitializeApp 初始化应用
