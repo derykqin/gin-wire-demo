@@ -50,12 +50,12 @@ type LogConfig struct {
 }
 
 type JWTConfig struct {
-	SigningKey       string        `mapstructure:"signing_key"`    // JWT 签名密钥
-	Timeout          time.Duration `mapstructure:"timeout"`        // Token 过期时间
-	MaxRefresh       time.Duration `mapstructure:"max_refresh"`    // 最大刷新时间
-	CacheDuration    time.Duration `mapstructure:"cache_duration"` // 用户信息缓存时间
-	MaxLoginAttempts int           `json:"max_login_attempts"`     // 新增
-	LockDuration     time.Duration `json:"lock_duration"`          // 新增
+	SigningKey       string        `mapstructure:"signing_key"`        // JWT 签名密钥
+	Timeout          time.Duration `mapstructure:"timeout"`            // Token 过期时间
+	MaxRefresh       time.Duration `mapstructure:"max_refresh"`        // 最大刷新时间
+	CacheDuration    time.Duration `mapstructure:"cache_duration"`     // 用户信息缓存时间
+	MaxLoginAttempts int           `mapstructure:"max_login_attempts"` // 新增
+	LockDuration     time.Duration `mapstructure:"lock_duration"`      // 新增
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -159,6 +159,11 @@ func validateConfig(cfg *Config) error {
 	if cfg.JWT.MaxRefresh <= 0 {
 		return fmt.Errorf("jwt max refresh must be positive")
 	}
-
+	if cfg.JWT.MaxLoginAttempts <= 0 {
+		return fmt.Errorf("jwt max login attempts must be positive")
+	}
+	if cfg.JWT.LockDuration <= 0 {
+		return fmt.Errorf("jwt lock duration must be positive")
+	}
 	return nil
 }

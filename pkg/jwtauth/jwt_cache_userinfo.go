@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	Cacheuserinfokey = "cache:%s:jwt:mid:ui:%s"
+	Cacheuserinfokey = "cache:%s:jwt:mid:ui:%d"
 )
 
 type JwtCacheUserinfo struct {
