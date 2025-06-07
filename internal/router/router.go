@@ -52,6 +52,10 @@ func NewRouter(
 		logger.Warn("zap logger not available, using default gin logger")
 		r.Use(gin.Logger(), gin.Recovery())
 	}
+
+	//注册自定义验证函数
+	registerValidator()
+
 	// 公共路由
 	public := r.Group("/api")
 	public.Use(rateLimiter.Handle(2, 5*time.Second))

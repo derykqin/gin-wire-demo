@@ -7,6 +7,7 @@ import (
 
 	"gin-wire-demo/internal/model"
 	"gin-wire-demo/internal/service"
+	"gin-wire-demo/internal/utils"
 	"gin-wire-demo/pkg/logger"
 
 	"github.com/gin-gonic/gin"
@@ -36,15 +37,15 @@ func NewUserController(
 func (c *UserController) Register(ctx *gin.Context) {
 	var user model.User
 	if err := ctx.ShouldBindJSON(&user); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": ErrValidationfail.Error()})
+		utils.Error(ctx, http.StatusBadRequest, ErrValidationfail.Error())
 		return
 	}
 	if err := c.userService.CreateUser(&user); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": ErrRegisterFail.Error()})
+		utils.Error(ctx, http.StatusInternalServerError, ErrRegisterFail.Error())
 		return
 	}
 
-	ctx.JSON(http.StatusCreated, gin.H{"message": "user created successfully"})
+	utils.Success(ctx, "user created successfully")
 }
 
 func (c *UserController) GetUser(ctx *gin.Context) {
@@ -52,9 +53,9 @@ func (c *UserController) GetUser(ctx *gin.Context) {
 
 	user, err := c.userService.GetUserByUsername(username)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		utils.Error(ctx, http.StatusNotFound, "user not found")
 		return
 	}
 	user.Password = ""
-	ctx.JSON(http.StatusOK, user)
+	utils.Success(ctx, user)
 }
